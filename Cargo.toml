@@ -1,0 +1,13 @@
+[package]
+name = "ARec"
+version = "1.0.1"
+description = "Windows Audio Loopback Recorder"   
+edition = "2024"
+
+[dependencies]
+anyhow = "1"
+clap = { version = "4", features = ["derive"] }
+wasapi = "0.22"
+shine-rs = "0.1"
+crossbeam-channel = "0.5"
+ctrlc = "3"
