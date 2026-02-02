@@ -4,7 +4,8 @@ use crossbeam_channel::{bounded, Receiver};
 use shine_rs::{Mp3Encoder, Mp3EncoderConfig, StereoMode, SUPPORTED_BITRATES, SUPPORTED_SAMPLE_RATES};
 use std::{
     fs::File,
-    io::Write,
+    io::{self, Write},
+    path::Path,
     time::{Duration, Instant},
 };
 use wasapi::{
@@ -204,17 +205,17 @@ fn record_loopback_to_mp3(
     .context("failed to set Ctrl+C handler")?;
 
     println!(
-        "Recording... {}",
-        if seconds == 0 {
-            "press Ctrl+C to stop".to_string()
-        } else {
-            format!("for {seconds}s")
-        }
+        "Recording started. Output: {out_path} | bitrate: {kbps} kbps | Ctrl+C to stop{}",
+        if seconds == 0 { "" } else { "" }
     );
+
 
     audio_client.start_stream()?;
 
     let start = Instant::now();
+    let mut last_ui = Instant::now();
+    let mut stop_reason = "completed";
+
 
     // Reusable buffers to avoid per-packet allocations (important for long recordings)
     let bytes_per_sample = 2usize; // i16
@@ -229,13 +230,29 @@ fn record_loopback_to_mp3(
     // Final samples given to encoder (target_channels interleaved)
     let mut enc_buf: Vec<i16> = Vec::with_capacity(target_channels * 4096);
 
-
+    // Main loop (Outer Loop)
     loop {
         if seconds != 0 && start.elapsed() >= Duration::from_secs(seconds) {
+            stop_reason = "time limit reached";
             break;
         }
         if stop_requested(&stop_rx) {
+            stop_reason = "interrupted (Ctrl+C)";
             break;
+        }
+
+        // Update UI once per second
+        if last_ui.elapsed() >= Duration::from_secs(1) {
+            let elapsed = start.elapsed().as_secs();
+            if seconds == 0 {
+                print_status_line(&format!("Recording... elapsed {elapsed}s (Ctrl+C to stop)"))?;
+            } else {
+                let remaining = seconds.saturating_sub(elapsed);
+                print_status_line(&format!(
+                    "Recording... remaining {remaining}s / total {seconds}s (Ctrl+C to stop)"
+                ))?;
+            }
+            last_ui = Instant::now();
         }
 
         // Wait for event that indicates data is available
@@ -312,6 +329,24 @@ fn record_loopback_to_mp3(
     let tail = encoder.finish().map_err(|e| anyhow!("finish error: {e:?}"))?;
     out.write_all(&tail)?;
     out.flush()?;
+
+    // Clear the live status line and print a newline
+    print_status_line("")?;
+    println!();
+
+    let recorded_secs = start.elapsed().as_secs().max(1); // avoid div-by-zero
+    let size_bytes = std::fs::metadata(Path::new(out_path))
+        .map(|m| m.len())
+        .unwrap_or(0);
+
+    let avg_kbps = (size_bytes as f64 * 8.0 / recorded_secs as f64) / 1000.0;
+
+    println!("Stop reason: {stop_reason}");
+    println!("Recorded: {recorded_secs} s");
+    println!("File: {out_path}");
+    println!("Size: {}", human_bytes(size_bytes));
+    println!("Average bitrate (approx): {:.1} kbps", avg_kbps);
+
 
     println!("Saved: {out_path}");
     Ok(())
@@ -395,4 +430,29 @@ fn take_first_two_channels_into(input: &[i16], channels: usize, out: &mut Vec<i1
         out.push(l);
         out.push(r);
     }
+}
+
+fn human_bytes(bytes: u64) -> String {
+    const KB: f64 = 1024.0;
+    const MB: f64 = KB * 1024.0;
+    const GB: f64 = MB * 1024.0;
+    let b = bytes as f64;
+
+    if b >= GB {
+        format!("{:.2} GiB", b / GB)
+    } else if b >= MB {
+        format!("{:.2} MiB", b / MB)
+    } else if b >= KB {
+        format!("{:.2} KiB", b / KB)
+    } else {
+        format!("{bytes} B")
+    }
+}
+
+fn print_status_line(s: &str) -> Result<()> {
+    // \r = carriage return (return to start of line), no newline.
+    // Pad with spaces to overwrite leftovers from previous longer line.
+    print!("\r{s:<80}");
+    io::stdout().flush()?;
+    Ok(())
 }
