@@ -339,12 +339,9 @@ fn select_render_device(enumerator: &DeviceEnumerator, needle: Option<&str>) -> 
     Ok(enumerator.get_default_device(&Direction::Render)?)
 }
 
-fn downmix_n_to_stereo(interleaved: &[i16], channels: usize) -> Vec<i16> {
-    // Simple “energy-ish” downmix:
-    // L = average of even-ish set, R = average of odd-ish set.
-    // (For real use, use channel masks & a proper downmix matrix.)
-    let frames = interleaved.len() / channels;
-    let mut out = Vec::with_capacity(frames * 2);
+fn downmix_n_to_stereo_into(input: &[i16], channels: usize, out: &mut Vec<i16>) {
+    let frames = input.len() / channels;
+    out.reserve(frames * 2);
 
     for f in 0..frames {
         let base = f * channels;
@@ -354,7 +351,7 @@ fn downmix_n_to_stereo(interleaved: &[i16], channels: usize) -> Vec<i16> {
         let mut r_n: i32 = 0;
 
         for ch in 0..channels {
-            let s = interleaved[base + ch] as i32;
+            let s = input[base + ch] as i32;
             if ch % 2 == 0 {
                 l_acc += s;
                 l_n += 1;
@@ -370,34 +367,32 @@ fn downmix_n_to_stereo(interleaved: &[i16], channels: usize) -> Vec<i16> {
         out.push(l);
         out.push(r);
     }
-
-    out
 }
 
-fn downmix_n_to_mono(interleaved: &[i16], channels: usize) -> Vec<i16> {
-    let frames = interleaved.len() / channels;
-    let mut out = Vec::with_capacity(frames);
+fn downmix_n_to_mono_into(input: &[i16], channels: usize, out: &mut Vec<i16>) {
+    let frames = input.len() / channels;
+    out.reserve(frames);
+
     for f in 0..frames {
         let base = f * channels;
         let mut acc: i32 = 0;
         for ch in 0..channels {
-            acc += interleaved[base + ch] as i32;
+            acc += input[base + ch] as i32;
         }
         let m = (acc / channels as i32).clamp(i16::MIN as i32, i16::MAX as i32) as i16;
         out.push(m);
     }
-    out
 }
 
-fn take_first_two_channels(interleaved: &[i16], channels: usize) -> Vec<i16> {
-    let frames = interleaved.len() / channels;
-    let mut out = Vec::with_capacity(frames * 2);
+fn take_first_two_channels_into(input: &[i16], channels: usize, out: &mut Vec<i16>) {
+    let frames = input.len() / channels;
+    out.reserve(frames * 2);
+
     for f in 0..frames {
         let base = f * channels;
-        let l = interleaved[base];
-        let r = interleaved[base + 1.min(channels - 1)];
+        let l = input[base];
+        let r = input[base + 1.min(channels - 1)];
         out.push(l);
         out.push(r);
     }
-    out
 }
