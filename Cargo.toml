@@ -1,8 +1,12 @@
 [package]
-name = "ARec"
+name = "arec"
 version = "1.0.1"
 description = "Windows Audio Loopback Recorder"   
 edition = "2024"
+authors = ["Jonn Sandon <jonn42@gmail.com>"]
+
+[package.metadata]
+development_date = "2026-02-02"
 
 [dependencies]
 anyhow = "1"

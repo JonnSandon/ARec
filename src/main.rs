@@ -14,7 +14,7 @@ use wasapi::{
 };
 
 #[derive(Parser, Debug)]
-#[command(name = "win-loopback-to-mp3")]
+#[command(name = "ARec")]
 #[command(about = "Record Windows speaker output (WASAPI loopback) to MP3 (pure Rust encoder).", long_about = None)]
 struct Cli {
     #[command(subcommand)]
